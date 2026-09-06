@@ -30,14 +30,14 @@ const CHAR_DATA = 0x0000ae03; // write without response
 const uuid = (n) => `0000${n.toString(16).padStart(4, "0")}-0000-1000-8000-00805f9b34fb`;
 
 // --- PM290 / TSPL BLE -------------------------------------------------------
-// --- PM290 - Fully working -------------
 
 const PM290_GATT_SERVICE = 0x0000ff00;
 const PM290_CHAR_NOTIFY = 0x0000ff01;
 const PM290_CHAR_DATA = 0x0000ff02;
 
-// The PM290 capture shows BLE writes arriving in 244-byte ATT payloads
-// (247-byte ATT MTU minus the 3-byte ATT write-command header).
+// The PacketLogger capture showed the printer accepting 512-byte
+// application payloads on FF02. The BLE controller may fragment these
+// into smaller HCI packets, but Web Bluetooth should send 512-byte chunks.
 const PM290_CHUNK_BYTES = 512;
 
 export const PM290_WIDTH_BYTES = 48; // 384 dots
@@ -513,17 +513,21 @@ export class PM290Printer {
   /**
    * Send one complete TSPL print job through FF02.
    *
-   * The PM290 capture showed:
+      * The PM290 capture showed this exact command order:
    *
    *   SIZE 54 mm,54 mm
    *   GAP 0,0
    *   DIRECTION 0,0
    *   DENSITY 4
    *   CLS
-   *   BITMAP 0,0,48,432,1,
-   *   [bitmap]
    *   PRINT 1,1
+   *   BITMAP 0,0,48,432,1,
+   *   [bitmap data]
+   *   CRLF
    *
+   * The unusual PRINT-before-BITMAP order is intentional. It matches the
+   * captured working printer traffic and must not be "corrected" to generic
+   * TSPL ordering.
    * FF02 is the bulk TSPL print-data characteristic.
    */
   async print(
@@ -578,47 +582,47 @@ const sendChunks = async (bytes) => {
   }
 };
 
-await sendChunks(header);
+    await sendChunks(header);
 
-  const reverseByte = (byte) => {
-    byte = ((byte & 0xf0) >> 4) | ((byte & 0x0f) << 4);
-    byte = ((byte & 0xcc) >> 2) | ((byte & 0x33) << 2);
-    return ((byte & 0xaa) >> 1) | ((byte & 0x55) << 1);
-};
-    
-const pm290Bitmap = Uint8Array.from(
-  lines,
-  (byte) => reverseByte(byte ^ 0xff)
-);
+    const reverseByte = (byte) => {
+      byte = ((byte & 0xf0) >> 4) | ((byte & 0x0f) << 4);
+      byte = ((byte & 0xcc) >> 2) | ((byte & 0x33) << 2);
+      return ((byte & 0xaa) >> 1) | ((byte & 0x55) << 1);
+    };
 
-for (
-  let offset = 0;
-  offset < pm290Bitmap.length;
-  offset += PM290_CHUNK_BYTES
-) {
-  const chunk = pm290Bitmap.subarray(
-    offset,
-    Math.min(offset + PM290_CHUNK_BYTES, pm290Bitmap.length)
-  );
+    const pm290Bitmap = Uint8Array.from(
+      lines,
+      (byte) => reverseByte(byte ^ 0xff)
+    );
 
-  await this.data.writeValueWithoutResponse(chunk);
+    for (
+      let offset = 0;
+      offset < pm290Bitmap.length;
+      offset += PM290_CHUNK_BYTES
+    ) {
+      const chunk = pm290Bitmap.subarray(
+        offset,
+        Math.min(offset + PM290_CHUNK_BYTES, pm290Bitmap.length)
+      );
 
-  const bytesSent = offset + chunk.length;
+      await this.data.writeValueWithoutResponse(chunk);
 
-  this.lastSentLines = Math.floor(
-    bytesSent / PM290_WIDTH_BYTES
-  );
-}
+      const bytesSent = offset + chunk.length;
 
-await sendChunks(footer);
+      this.lastSentLines = Math.floor(
+        bytesSent / PM290_WIDTH_BYTES
+      );
+    }
 
-this.log(`PM290 print sent: ${lineCount} lines`);
+    await sendChunks(footer);
 
-return {
-  ok: true,
-  expected: null,
-  reported: null,
-  sent: lineCount,
+    this.log(`PM290 print sent: ${lineCount} lines`);
+
+    return {
+      ok: true,
+      expected: null,
+      reported: null,
+      sent: lineCount,
     };
   }
 }
