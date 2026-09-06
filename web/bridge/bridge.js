@@ -25,8 +25,15 @@
 // fine on a shared one. There is a "forget" button, and using it is the whole
 // of the security model.
 
-import { Printer, NoPaper, TooHot, KEEPALIVE_MS, WIDTH_BYTES } from "./printer.js";
-
+import {
+  Printer,
+  PM290Printer,
+  NoPaper,
+  TooHot,
+  KEEPALIVE_MS,
+  WIDTH_BYTES,
+  PM290_WIDTH_BYTES,
+} from "./printer.js";
 const $ = (id) => document.getElementById(id);
 
 const TOKEN_KEY = "bridge.token";
@@ -35,7 +42,7 @@ const DEVICE_KEY = "bridge.device";
 // The profile to ask the Worker for. This bridge speaks to one machine - the
 // MXW01, 58 mm, 384 dots - so it says so, and the Worker renders to that width
 // and that rotation. See worker/src/profiles.js.
-const PROFILE = "mxw01";
+let PROFILE = "mxw01";
 
 // How long to let the Worker hold the connection open waiting for work. The
 // Pico cannot afford this - its whole cycle is ruled by a nine-minute deadline
@@ -51,7 +58,17 @@ const HEARTBEAT_MS = 60_000;
 const RETRY_MS = 5_000;
 const RETRY_MAX_MS = 60_000;
 
-const printer = new Printer({ log: (what) => say(what) });
+let printer = new Printer({ log: (what) => say(what) });
+
+function selectPrinter(type) {
+  PROFILE = type;
+
+  printer = type === "pm290"
+    ? new PM290Printer({ log: (what) => say(what) })
+    : new Printer({ log: (what) => say(what) });
+
+  say(`selected ${type === "pm290" ? "PM290" : "MXW01"}`);
+}
 
 let token = "";
 let deviceId = "";
@@ -126,7 +143,10 @@ function decode(base64) {
 
 async function printJob(job) {
   const bytes = decode(job.data);
-  if (job.width_bytes !== WIDTH_BYTES) {
+  const printerWidthBytes =
+  PROFILE === "pm290" ? PM290_WIDTH_BYTES : WIDTH_BYTES;
+
+if (job.width_bytes !== printerWidthBytes) {
     // The Worker rendered for another machine. Hand it back rather than print
     // nonsense: a ticket sent to the wrong width comes out as diagonal noise.
     await reportDone({
@@ -134,7 +154,7 @@ async function printJob(job) {
       ids: job.ids ?? [job.id],
       ok: false,
       retry: true,
-      error: `rendered ${job.width_bytes} bytes wide, this printer is ${WIDTH_BYTES}`,
+      error: `rendered ${job.width_bytes} bytes wide, this printer is ${printerWidthBytes}`,
     });
     return;
   }
@@ -263,17 +283,36 @@ function setRunning(on) {
   running = on;
   $("start").hidden = on;
   $("stop").hidden = !on;
+  $("printerType").disabled = on;
   $("dot").className = on ? "dot dot--on" : "dot";
   $("status").textContent = on ? "running — leave this tab open" : "stopped";
 }
 
+$("printerType").addEventListener("change", (event) => {
+  if (running || printer.connected) return;
+
+  selectPrinter(event.target.value);
+});
+
 $("connect").addEventListener("click", async () => {
   try {
+    const type = $("printerType").value;
+
+    selectPrinter(type);
+
     const name = await printer.choose();
+
     await printer.connect();
+
     say(`connected to ${name}`);
+
     $("start").disabled = false;
-    paint(await printer.status());
+
+    const status = printer.status
+      ? await printer.status()
+      : await printer.keepalive();
+
+    paint(status);
   } catch (err) {
     say(err.message, true);
   }
