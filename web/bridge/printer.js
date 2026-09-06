@@ -402,3 +402,206 @@ export class Printer {
     return { ok: reported === expected, expected, reported, sent };
   }
 }
+
+// --- PM290 / TSPL printer ----------------------------------------------------
+
+export class PM290Printer {
+  constructor({ log = () => {} } = {}) {
+    this.log = log;
+    this.device = null;
+    this.service = null;
+    this.data = null;
+    this.notify = null;
+    this.lastSentLines = 0;
+  }
+
+  get connected() {
+    return Boolean(this.device?.gatt?.connected);
+  }
+
+  /**
+   * Opens the Bluetooth chooser.
+   *
+   * PM290 advertises AF30, but its actual print GATT service is FF00.
+   */
+  async choose() {
+    if (!navigator.bluetooth) {
+      throw new PrinterError(
+        "This browser has no Web Bluetooth. Chrome or Edge on desktop, or Chrome on Android."
+      );
+    }
+
+    this.device = await navigator.bluetooth.requestDevice({
+      filters: [
+        { services: [ADV_SERVICE] },
+        { namePrefix: "PM290" },
+      ],
+      optionalServices: [uuid(PM290_GATT_SERVICE & 0xffff)],
+    });
+
+    this.device.addEventListener("gattserverdisconnected", () => {
+      this.log("PM290 disconnected");
+      this.data = null;
+      this.notify = null;
+      this.service = null;
+    });
+
+    return this.device.name ?? "PM290";
+  }
+
+  async connect() {
+    if (!this.device) throw new PrinterError("no PM290 chosen yet");
+    if (this.connected && this.data) return;
+
+    const server = await this.device.gatt.connect();
+
+    this.service = await server.getPrimaryService(
+      uuid(PM290_GATT_SERVICE & 0xffff)
+    );
+
+    this.data = await this.service.getCharacteristic(
+      uuid(PM290_CHAR_DATA & 0xffff)
+    );
+
+    // FF01 is useful for future status handling. The PM290 does not use the
+    // MXW01 A1/A2/A3 notification protocol, so connection does not depend on
+    // receiving a status response here.
+    try {
+      this.notify = await this.service.getCharacteristic(
+        uuid(PM290_CHAR_NOTIFY & 0xffff)
+      );
+      await this.notify.startNotifications();
+      this.notify.addEventListener("characteristicvaluechanged", (event) => {
+        const bytes = new Uint8Array(
+          event.target.value.buffer,
+          event.target.value.byteOffset,
+          event.target.value.byteLength
+        );
+        this.log(
+          `PM290 notification: ${[...bytes]
+            .map((b) => b.toString(16).padStart(2, "0"))
+            .join(" ")}`
+        );
+      });
+    } catch {
+      // Some firmware revisions expose FF01 differently. Printing uses FF02
+      // and does not depend on notifications.
+      this.notify = null;
+    }
+
+    this.log("PM290 connected");
+  }
+
+  async disconnect() {
+    if (this.device?.gatt?.connected) {
+      this.device.gatt.disconnect();
+    }
+  }
+
+  async keepalive() {
+    if (!this.connected) await this.connect();
+
+    return {
+      state: 0,
+      battery: null,
+      temperature: null,
+      paperOk: true,
+      raw: null,
+    };
+  }
+
+  /**
+   * Send one complete TSPL print job through FF02.
+   *
+   * The PM290 capture showed:
+   *
+   *   SIZE 54 mm,54 mm
+   *   GAP 0,0
+   *   DIRECTION 0,0
+   *   DENSITY 4
+   *   CLS
+   *   BITMAP 0,0,48,432,1,
+   *   [bitmap]
+   *   PRINT 1,1
+   *
+   * FF02 is the bulk TSPL print-data characteristic.
+   */
+  async print(
+    lines,
+    { intensity = 4, feedLines = 0 } = {}
+  ) {
+    if (!this.connected) await this.connect();
+
+    if (lines.length % PM290_WIDTH_BYTES !== 0) {
+      throw new PrinterError(
+        `${lines.length} bytes is not a whole number of PM290 lines`
+      );
+    }
+
+    const lineCount = lines.length / PM290_WIDTH_BYTES;
+    this.lastSentLines = 0;
+
+    if (!lineCount) {
+      throw new PrinterError("PM290 print job is empty");
+    }
+
+    // PM290 is 8 dots/mm. Use the actual raster height rather than assuming
+    // every job is exactly the 54 mm / 432-line capture.
+    const heightMm = (lineCount / 8).toFixed(2);
+
+    const header = new TextEncoder().encode(
+      `SIZE 54 mm,${heightMm} mm\r\n` +
+      `GAP 0,0\r\n` +
+      `DIRECTION 0,0\r\n` +
+      `DENSITY ${Math.max(0, Math.min(15, intensity))}\r\n` +
+      `CLS\r\n` +
+      `BITMAP 0,0,48,${lineCount},1,`
+    );
+
+    const footer = new TextEncoder().encode(
+      `\r\nPRINT 1,1\r\n`
+    );
+
+    const sendChunks = async (bytes) => {
+      for (let offset = 0; offset < bytes.length; offset += PM290_CHUNK_BYTES) {
+        const chunk = bytes.subarray(
+          offset,
+          Math.min(offset + PM290_CHUNK_BYTES, bytes.length)
+        );
+
+        await this.data.writeValueWithoutResponse(chunk);
+      }
+    };
+
+    await sendChunks(header);
+
+    for (let offset = 0; offset < lines.length; offset += PM290_CHUNK_BYTES) {
+      const chunk = lines.subarray(
+        offset,
+        Math.min(offset + PM290_CHUNK_BYTES, lines.length)
+      );
+
+      await this.data.writeValueWithoutResponse(chunk);
+
+      const bytesSent = Math.min(
+        offset + chunk.length,
+        lines.length
+      );
+
+      this.lastSentLines = Math.floor(
+        bytesSent / PM290_WIDTH_BYTES
+      );
+    }
+
+    await sendChunks(footer);
+
+    this.log(`PM290 print sent: ${lineCount} lines`);
+
+    return {
+      ok: true,
+      expected: null,
+      reported: null,
+      sent: lineCount,
+    };
+  }
+}
