@@ -433,7 +433,6 @@ export class PM290Printer {
 
     this.device = await navigator.bluetooth.requestDevice({
       filters: [
-        { services: [ADV_SERVICE] },
         { namePrefix: "PM290" },
       ],
       optionalServices: [uuid(PM290_GATT_SERVICE & 0xffff)],
