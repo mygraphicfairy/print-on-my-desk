@@ -555,7 +555,7 @@ const header = new TextEncoder().encode(
   `DENSITY ${Math.max(0, Math.min(15, intensity))}\r\n` +
   `CLS\r\n` +
   `PRINT 1,1\r\n` +
-  `BITMAP 0,0,48,${lineCount},1,`
+  `BITMAP 0,0,48,${lineCount},0,`
 );
 
 const footer = new TextEncoder().encode(
