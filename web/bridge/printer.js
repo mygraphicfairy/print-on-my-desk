@@ -30,6 +30,7 @@ const CHAR_DATA = 0x0000ae03; // write without response
 const uuid = (n) => `0000${n.toString(16).padStart(4, "0")}-0000-1000-8000-00805f9b34fb`;
 
 // --- PM290 / TSPL BLE -------------------------------------------------------
+// --- PM290 - Fully working -------------
 
 const PM290_GATT_SERVICE = 0x0000ff00;
 const PM290_CHAR_NOTIFY = 0x0000ff01;
