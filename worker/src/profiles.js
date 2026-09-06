@@ -147,7 +147,30 @@ const TRP100 = {
   transport: "escpos",
 };
 
-export const PROFILES = { mxw01: MXW01, trp100: TRP100 };
+/**
+ * 8 dots/mm, 384 dots, 54 mm PM290 pocket BLE printer.
+ *
+ * The PM290 uses TSPL-style raster data over BLE rather than the
+ * MXW01's custom AE30 protocol.
+ */
+const PM290 = {
+  id: "pm290",
+  label: "PM290 (54 mm, BLE)",
+  widthPixels: 384,
+  widthBytes: 48,
+  dotsPerMm: 8,
+  paperWidthMm: 54,
+  layout: "framed",
+  margin: 12,
+  topPad: 8,
+  bottomPad: 12,
+  maxLines: 1024,
+  feedLines: 0,
+  flip180: false,
+  transport: "tspl-ble",
+};
+
+export const PROFILES = { mxw01: MXW01, trp100: TRP100, pm290: PM290 };
 
 /**
  * What a device that names no profile gets.
