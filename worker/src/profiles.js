@@ -153,6 +153,7 @@ const TRP100 = {
  * The PM290 uses TSPL-style raster data over BLE rather than the
  * MXW01's custom AE30 protocol.
  */
+// PM290 support: 384-dot TSPL/BLE printer
 const PM290 = {
   id: "pm290",
   label: "PM290 (54 mm, BLE)",
