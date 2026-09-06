@@ -578,7 +578,18 @@ for (let offset = 0; offset < pm290Bitmap.length; offset += PM290_CHUNK_BYTES) {
       }
     };
 
-    await sendChunks(header);
+const sendChunks = async (bytes) => {
+  for (let offset = 0; offset < bytes.length; offset += PM290_CHUNK_BYTES) {
+    const chunk = bytes.subarray(
+      offset,
+      Math.min(offset + PM290_CHUNK_BYTES, bytes.length)
+    );
+
+    await this.data.writeValueWithoutResponse(chunk);
+  }
+};
+
+await sendChunks(header);
 
 const pm290Bitmap = Uint8Array.from(
   lines,
@@ -597,10 +608,7 @@ for (
 
   await this.data.writeValueWithoutResponse(chunk);
 
-  const bytesSent = Math.min(
-    offset + chunk.length,
-    pm290Bitmap.length
-  );
+  const bytesSent = offset + chunk.length;
 
   this.lastSentLines = Math.floor(
     bytesSent / PM290_WIDTH_BYTES
@@ -608,11 +616,6 @@ for (
 }
 
 await sendChunks(footer);
-        bytesSent / PM290_WIDTH_BYTES
-      );
-    }
-
-    await sendChunks(footer);
 
     this.log(`PM290 print sent: ${lineCount} lines`);
 
