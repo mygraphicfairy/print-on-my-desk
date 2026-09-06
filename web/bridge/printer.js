@@ -551,7 +551,7 @@ export class PM290Printer {
 const header = new TextEncoder().encode(
   `SIZE 54 mm,${heightMm} mm\r\n` +
   `GAP 0,0\r\n` +
-  `DIRECTION 1,0\r\n` +
+  `DIRECTION 0,0\r\n` +
   `DENSITY ${Math.max(0, Math.min(15, intensity))}\r\n` +
   `CLS\r\n` +
   `PRINT 1,1\r\n` +
@@ -563,13 +563,18 @@ const footer = new TextEncoder().encode(
 );
 
     const sendChunks = async (bytes) => {
-      for (let offset = 0; offset < bytes.length; offset += PM290_CHUNK_BYTES) {
-        const chunk = bytes.subarray(
-          offset,
-          Math.min(offset + PM290_CHUNK_BYTES, bytes.length)
-        );
+      const pm290Bitmap = Uint8Array.from(
+  lines,
+  (byte) => byte ^ 0xff
+);
 
-        await this.data.writeValueWithoutResponse(chunk);
+for (let offset = 0; offset < pm290Bitmap.length; offset += PM290_CHUNK_BYTES) {
+  const chunk = pm290Bitmap.subarray(
+    offset,
+    Math.min(offset + PM290_CHUNK_BYTES, pm290Bitmap.length)
+  );
+
+  await this.data.writeValueWithoutResponse(chunk);
       }
     };
 
@@ -585,7 +590,7 @@ const footer = new TextEncoder().encode(
 
       const bytesSent = Math.min(
         offset + chunk.length,
-        lines.length
+        pm290Bitmap.length
       );
 
       this.lastSentLines = Math.floor(
