@@ -17,16 +17,30 @@
     messages come out. When you close it, they wait.
   </p>
 
-  <div class="panel">
-    <h2>1 · The printer</h2>
-    <div class="buttons">
-      <button id="connect">Connect over Bluetooth</button>
-    </div>
-    <p class="lead" style="margin:0.75rem 0 0;font-size:13px">
-      Turn the printer on first. Your browser will ask which device to use —
-      it is the one called MXW01.
-    </p>
-  </div>
+<div class="panel">
+
+<h2>1 · The printer</h2>
+
+<label for="printerType">Printer</label>
+
+<select id="printerType">
+<option value="mxw01">MXW01</option>
+<option value="pm290">PM290</option>
+</select>
+
+<div class="buttons">
+
+<button id="connect">Connect over Bluetooth</button>
+
+</div>
+
+<p class="lead" style="margin:0.75rem 0 0;font-size:13px">
+
+Turn the selected printer on first. Your browser will ask which device to use.
+
+</p>
+
+</div>
 
   <div class="panel">
     <h2>2 · The queue</h2>
