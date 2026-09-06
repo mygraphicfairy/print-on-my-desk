@@ -551,7 +551,7 @@ export class PM290Printer {
 const header = new TextEncoder().encode(
   `SIZE 54 mm,${heightMm} mm\r\n` +
   `GAP 0,0\r\n` +
-  `DIRECTION 0,0\r\n` +
+  `DIRECTION 1,0\r\n` +
   `DENSITY ${Math.max(0, Math.min(15, intensity))}\r\n` +
   `CLS\r\n` +
   `PRINT 1,1\r\n` +
