@@ -29,6 +29,18 @@ const CHAR_DATA = 0x0000ae03; // write without response
 
 const uuid = (n) => `0000${n.toString(16).padStart(4, "0")}-0000-1000-8000-00805f9b34fb`;
 
+// --- PM290 / TSPL BLE -------------------------------------------------------
+
+const PM290_GATT_SERVICE = 0x0000ff00;
+const PM290_CHAR_NOTIFY = 0x0000ff01;
+const PM290_CHAR_DATA = 0x0000ff02;
+
+// The PM290 capture shows BLE writes arriving in 244-byte ATT payloads
+// (247-byte ATT MTU minus the 3-byte ATT write-command header).
+const PM290_CHUNK_BYTES = 244;
+
+export const PM290_WIDTH_BYTES = 48; // 384 dots
+
 // --- commands ---------------------------------------------------------------
 
 const CMD_STATUS = 0xa1;
