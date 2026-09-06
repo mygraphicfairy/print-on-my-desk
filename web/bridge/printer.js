@@ -612,15 +612,6 @@ return {
   expected: null,
   reported: null,
   sent: lineCount,
-};
-    
-    this.log(`PM290 print sent: ${lineCount} lines`);
-
-    return {
-      ok: true,
-      expected: null,
-      reported: null,
-      sent: lineCount,
     };
   }
 }
