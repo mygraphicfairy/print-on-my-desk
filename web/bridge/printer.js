@@ -548,18 +548,19 @@ export class PM290Printer {
     // every job is exactly the 54 mm / 432-line capture.
     const heightMm = (lineCount / 8).toFixed(2);
 
-    const header = new TextEncoder().encode(
-      `SIZE 54 mm,${heightMm} mm\r\n` +
-      `GAP 0,0\r\n` +
-      `DIRECTION 0,0\r\n` +
-      `DENSITY ${Math.max(0, Math.min(15, intensity))}\r\n` +
-      `CLS\r\n` +
-      `BITMAP 0,0,48,${lineCount},1,`
-    );
+const header = new TextEncoder().encode(
+  `SIZE 54 mm,${heightMm} mm\r\n` +
+  `GAP 0,0\r\n` +
+  `DIRECTION 0,0\r\n` +
+  `DENSITY ${Math.max(0, Math.min(15, intensity))}\r\n` +
+  `CLS\r\n` +
+  `PRINT 1,1\r\n` +
+  `BITMAP 0,0,48,${lineCount},1,`
+);
 
-    const footer = new TextEncoder().encode(
-      `\r\nPRINT 1,1\r\n`
-    );
+const footer = new TextEncoder().encode(
+  `\r\n`
+);
 
     const sendChunks = async (bytes) => {
       for (let offset = 0; offset < bytes.length; offset += PM290_CHUNK_BYTES) {
