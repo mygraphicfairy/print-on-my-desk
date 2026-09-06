@@ -580,20 +580,34 @@ for (let offset = 0; offset < pm290Bitmap.length; offset += PM290_CHUNK_BYTES) {
 
     await sendChunks(header);
 
-    for (let offset = 0; offset < lines.length; offset += PM290_CHUNK_BYTES) {
-      const chunk = lines.subarray(
-        offset,
-        Math.min(offset + PM290_CHUNK_BYTES, lines.length)
-      );
+const pm290Bitmap = Uint8Array.from(
+  lines,
+  (byte) => byte ^ 0xff
+);
 
-      await this.data.writeValueWithoutResponse(chunk);
+for (
+  let offset = 0;
+  offset < pm290Bitmap.length;
+  offset += PM290_CHUNK_BYTES
+) {
+  const chunk = pm290Bitmap.subarray(
+    offset,
+    Math.min(offset + PM290_CHUNK_BYTES, pm290Bitmap.length)
+  );
 
-      const bytesSent = Math.min(
-        offset + chunk.length,
-        pm290Bitmap.length
-      );
+  await this.data.writeValueWithoutResponse(chunk);
 
-      this.lastSentLines = Math.floor(
+  const bytesSent = Math.min(
+    offset + chunk.length,
+    pm290Bitmap.length
+  );
+
+  this.lastSentLines = Math.floor(
+    bytesSent / PM290_WIDTH_BYTES
+  );
+}
+
+await sendChunks(footer);
         bytesSent / PM290_WIDTH_BYTES
       );
     }
