@@ -562,24 +562,12 @@ const footer = new TextEncoder().encode(
   `\r\n`
 );
 
-    const sendChunks = async (bytes) => {
-      const pm290Bitmap = Uint8Array.from(
-  lines,
-  (byte) => byte ^ 0xff
-);
-
-for (let offset = 0; offset < pm290Bitmap.length; offset += PM290_CHUNK_BYTES) {
-  const chunk = pm290Bitmap.subarray(
-    offset,
-    Math.min(offset + PM290_CHUNK_BYTES, pm290Bitmap.length)
-  );
-
-  await this.data.writeValueWithoutResponse(chunk);
-      }
-    };
-
 const sendChunks = async (bytes) => {
-  for (let offset = 0; offset < bytes.length; offset += PM290_CHUNK_BYTES) {
+  for (
+    let offset = 0;
+    offset < bytes.length;
+    offset += PM290_CHUNK_BYTES
+  ) {
     const chunk = bytes.subarray(
       offset,
       Math.min(offset + PM290_CHUNK_BYTES, bytes.length)
@@ -617,6 +605,15 @@ for (
 
 await sendChunks(footer);
 
+this.log(`PM290 print sent: ${lineCount} lines`);
+
+return {
+  ok: true,
+  expected: null,
+  reported: null,
+  sent: lineCount,
+};
+    
     this.log(`PM290 print sent: ${lineCount} lines`);
 
     return {
