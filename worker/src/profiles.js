@@ -167,7 +167,7 @@ const PM290 = {
   bottomPad: 12,
   maxLines: 1024,
   feedLines: 0,
-  flip180: false,
+  flip180: true,
   transport: "tspl-ble",
 };
 
