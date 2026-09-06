@@ -432,14 +432,11 @@ export class PM290Printer {
     }
 
     this.device = await navigator.bluetooth.requestDevice({
-  acceptAllDevices: true,
+  filters: [
+    { namePrefix: "PM290" },
+  ],
   optionalServices: [uuid(PM290_GATT_SERVICE & 0xffff)],
 });
-    if (!this.device.name?.toUpperCase().startsWith("PM290")) {
-  throw new PrinterError(
-    `Selected device "${this.device.name ?? "Unknown"}" is not a PM290`
-  );
-}
 
     this.device.addEventListener("gattserverdisconnected", () => {
       this.log("PM290 disconnected");
