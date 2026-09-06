@@ -37,7 +37,7 @@ const PM290_CHAR_DATA = 0x0000ff02;
 
 // The PM290 capture shows BLE writes arriving in 244-byte ATT payloads
 // (247-byte ATT MTU minus the 3-byte ATT write-command header).
-const PM290_CHUNK_BYTES = 244;
+const PM290_CHUNK_BYTES = 512;
 
 export const PM290_WIDTH_BYTES = 48; // 384 dots
 
@@ -555,7 +555,7 @@ const header = new TextEncoder().encode(
   `DENSITY ${Math.max(0, Math.min(15, intensity))}\r\n` +
   `CLS\r\n` +
   `PRINT 1,1\r\n` +
-  `BITMAP 0,0,48,${lineCount},0,`
+  `BITMAP 0,0,48,${lineCount},1,`
 );
 
 const footer = new TextEncoder().encode(
@@ -579,9 +579,15 @@ const sendChunks = async (bytes) => {
 
 await sendChunks(header);
 
+  const reverseByte = (byte) => {
+    byte = ((byte & 0xf0) >> 4) | ((byte & 0x0f) << 4);
+    byte = ((byte & 0xcc) >> 2) | ((byte & 0x33) << 2);
+    return ((byte & 0xaa) >> 1) | ((byte & 0x55) << 1);
+};
+    
 const pm290Bitmap = Uint8Array.from(
   lines,
-  (byte) => byte ^ 0xff
+  (byte) => reverseByte(byte ^ 0xff)
 );
 
 for (
