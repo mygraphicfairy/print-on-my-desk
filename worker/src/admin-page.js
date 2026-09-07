@@ -155,7 +155,7 @@ export const ADMIN_PAGE = String.raw`<!doctype html>
 </head>
 <body>
 <main>
-  <h1>PRINT ON MY DESK</h1>
+  <h1>FAIRY MAIL</h1>
   <p class="sub">Moderation desk. Nothing prints until you say so.</p>
 
   <form id="gate">
