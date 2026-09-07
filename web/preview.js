@@ -35,7 +35,7 @@ if (canvas && input) {
   // Shown on an empty field. Not a placeholder in some other font - it is
   // drawn in the dots too, faintly, so that the first thing anybody sees is
   // already the truth about what this machine does.
-  const EMPTY = "Type here. These are the printer's own dots, not a font that looks like them.";
+  const EMPTY = "Type here. A message will print at their fairy's desk after she has approved them. Leave a threads handle for a tag.";
 
   function draw() {
     const text = input.value;
