@@ -498,7 +498,6 @@ if (
     resolve();
       }
     }
-  }
 });
     } catch {
       // Some firmware revisions expose FF01 differently. Printing uses FF02
@@ -630,7 +629,7 @@ const sendChunks = async (bytes) => {
         bytesSent / PM290_WIDTH_BYTES
       );
     }
-  }
+    
 const completionPromise = new Promise((resolve, reject) => {
   let settled = false;
 
