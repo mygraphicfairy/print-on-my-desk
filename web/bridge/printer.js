@@ -630,7 +630,7 @@ const sendChunks = async (bytes) => {
         bytesSent / PM290_WIDTH_BYTES
       );
     }
-
+  }
 const completionPromise = new Promise((resolve, reject) => {
   let settled = false;
 
