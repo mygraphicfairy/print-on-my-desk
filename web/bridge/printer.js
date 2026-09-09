@@ -526,26 +526,25 @@ if (
     };
   }
 
-  /**
-   * Send one complete TSPL print job through FF02.
-   *
-      * The PM290 capture showed this exact command order:
-   *
-   *   SIZE 54 mm,54 mm
-   *   GAP 0,0
-   *   DIRECTION 0,0
-   *   DENSITY 4
-   *   CLS
-   *   PRINT 1,1
-   *   BITMAP 0,0,48,432,1,
-   *   [bitmap data]
-   *   CRLF
-   *
-   * The unusual PRINT-before-BITMAP order is intentional. It matches the
-   * captured working printer traffic and must not be "corrected" to generic
-   * TSPL ordering.
-   * FF02 is the bulk TSPL print-data characteristic.
-   */
+/**
+ * The PM290 capture showed this exact command order:
+ *
+ *   SIZE 54 mm,54 mm
+ *   GAP 0,0
+ *   DIRECTION 0,0
+ *   DENSITY 4
+ *   CLS
+ *   PRINT 1,1
+ *   BITMAP 0,0,48,432,1,
+ *   [bitmap data]
+ *   CRLF
+ *
+ * The unusual PRINT-before-BITMAP order is intentional. It matches the
+ * captured working printer traffic and must not be "corrected" to generic
+ * TSPL ordering.
+ *
+ * FF02 is the bulk TSPL print-data characteristic.
+ */
   async print(
     lines,
     { intensity = 4, feedLines = 0 } = {}
@@ -569,34 +568,32 @@ if (
     // every job is exactly the 54 mm / 432-line capture.
     const heightMm = (lineCount / 8).toFixed(2);
 
-const header = new TextEncoder().encode(
-  `SIZE 54 mm,${heightMm} mm\r\n` +
-  `GAP 0,0\r\n` +
-  `DIRECTION 0,0\r\n` +
-  `DENSITY ${Math.max(0, Math.min(15, intensity))}\r\n` +
-  `CLS\r\n` +
-  `PRINT 1,1\r\n` +
-  `BITMAP 0,0,48,${lineCount},1,`
-);
-
-const footer = new TextEncoder().encode(
-  `\r\n`
-);
-
-const sendChunks = async (bytes) => {
-  for (
-    let offset = 0;
-    offset < bytes.length;
-    offset += PM290_CHUNK_BYTES
-  ) {
-    const chunk = bytes.subarray(
-      offset,
-      Math.min(offset + PM290_CHUNK_BYTES, bytes.length)
+    const header = new TextEncoder().encode(
+      `SIZE 54 mm,${heightMm} mm\r\n` +
+      `GAP 0,0\r\n` +
+      `DIRECTION 0,0\r\n` +
+      `DENSITY ${Math.max(0, Math.min(15, intensity))}\r\n` +
+      `CLS\r\n` +
+      `PRINT 1,1\r\n` +
+      `BITMAP 0,0,48,${lineCount},1,`
     );
 
-    await this.data.writeValueWithoutResponse(chunk);
-  }
-};
+    const footer = new TextEncoder().encode(`\r\n`);
+
+    const sendChunks = async (bytes) => {
+      for (
+        let offset = 0;
+        offset < bytes.length;
+        offset += PM290_CHUNK_BYTES
+      ) {
+        const chunk = bytes.subarray(
+          offset,
+          Math.min(offset + PM290_CHUNK_BYTES, bytes.length)
+        );
+
+        await this.data.writeValueWithoutResponse(chunk);
+      }
+    };
 
     await sendChunks(header);
 
