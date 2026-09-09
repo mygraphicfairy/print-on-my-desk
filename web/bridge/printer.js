@@ -490,9 +490,7 @@ export class PM290Printer {
 if (
   bytes.length >= 4 &&
   bytes[0] === 0xf0 &&
-  bytes[1] === 0x00 &&
-  bytes[2] === 0x20 &&
-  bytes[3] === 0xd2
+  bytes[1] === 0x00
 ) {
     if (this.printCompleteWaiter) {
       const resolve = this.printCompleteWaiter;
@@ -632,16 +630,7 @@ const sendChunks = async (bytes) => {
       );
     }
 
-await sendChunks(footer);
-
-this.log(
-  `PM290 print data sent: ${lineCount} lines; waiting for printer completion`
-);
-
-// Wait for the PM290's captured print-complete notification.
-// Use a timeout so a firmware revision that does not report completion
-// cannot permanently stall the print queue.
-await new Promise((resolve) => {
+const completionPromise = new Promise((resolve) => {
   let settled = false;
 
   const finish = () => {
@@ -665,6 +654,14 @@ await new Promise((resolve) => {
 
   this.printCompleteWaiter = finish;
 });
+
+await sendChunks(footer);
+
+this.log(
+  `PM290 print data sent: ${lineCount} lines; waiting for printer completion`
+);
+
+await completionPromise;
 
 this.log(`PM290 print complete: ${lineCount} lines`);
 
