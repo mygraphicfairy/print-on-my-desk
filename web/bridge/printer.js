@@ -414,6 +414,7 @@ export class PM290Printer {
     this.data = null;
     this.notify = null;
     this.lastSentLines = 0;
+    this.printCompleteWaiter = null;
   }
 
   get connected() {
@@ -472,17 +473,32 @@ export class PM290Printer {
       );
       await this.notify.startNotifications();
       this.notify.addEventListener("characteristicvaluechanged", (event) => {
-        const bytes = new Uint8Array(
-          event.target.value.buffer,
-          event.target.value.byteOffset,
-          event.target.value.byteLength
-        );
-        this.log(
-          `PM290 notification: ${[...bytes]
-            .map((b) => b.toString(16).padStart(2, "0"))
-            .join(" ")}`
-        );
-      });
+  const bytes = new Uint8Array(
+    event.target.value.buffer,
+    event.target.value.byteOffset,
+    event.target.value.byteLength
+  );
+
+  this.log(
+    `PM290 notification: ${[...bytes]
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join(" ")}`
+  );
+
+// PM290 returns 63 00 when the printer is ready again
+// after completing a print job.
+if (
+  bytes.length >= 2 &&
+  bytes[0] === 0x63 &&
+  bytes[1] === 0x00
+) {
+  if (this.printCompleteWaiter) {
+    const resolve = this.printCompleteWaiter;
+    this.printCompleteWaiter = null;
+    resolve();
+      }
+    }
+});
     } catch {
       // Some firmware revisions expose FF01 differently. Printing uses FF02
       // and does not depend on notifications.
@@ -510,26 +526,25 @@ export class PM290Printer {
     };
   }
 
-  /**
-   * Send one complete TSPL print job through FF02.
-   *
-      * The PM290 capture showed this exact command order:
-   *
-   *   SIZE 54 mm,54 mm
-   *   GAP 0,0
-   *   DIRECTION 0,0
-   *   DENSITY 4
-   *   CLS
-   *   PRINT 1,1
-   *   BITMAP 0,0,48,432,1,
-   *   [bitmap data]
-   *   CRLF
-   *
-   * The unusual PRINT-before-BITMAP order is intentional. It matches the
-   * captured working printer traffic and must not be "corrected" to generic
-   * TSPL ordering.
-   * FF02 is the bulk TSPL print-data characteristic.
-   */
+/**
+ * The PM290 capture showed this exact command order:
+ *
+ *   SIZE 54 mm,54 mm
+ *   GAP 0,0
+ *   DIRECTION 0,0
+ *   DENSITY 4
+ *   CLS
+ *   PRINT 1,1
+ *   BITMAP 0,0,48,432,1,
+ *   [bitmap data]
+ *   CRLF
+ *
+ * The unusual PRINT-before-BITMAP order is intentional. It matches the
+ * captured working printer traffic and must not be "corrected" to generic
+ * TSPL ordering.
+ *
+ * FF02 is the bulk TSPL print-data characteristic.
+ */
   async print(
     lines,
     { intensity = 4, feedLines = 0 } = {}
@@ -553,34 +568,74 @@ export class PM290Printer {
     // every job is exactly the 54 mm / 432-line capture.
     const heightMm = (lineCount / 8).toFixed(2);
 
-const header = new TextEncoder().encode(
-  `SIZE 54 mm,${heightMm} mm\r\n` +
-  `GAP 0,0\r\n` +
-  `DIRECTION 0,0\r\n` +
-  `DENSITY ${Math.max(0, Math.min(15, intensity))}\r\n` +
-  `CLS\r\n` +
-  `PRINT 1,1\r\n` +
-  `BITMAP 0,0,48,${lineCount},1,`
-);
+    const completionPromise = new Promise((resolve, reject) => {
+      let settled = false;
 
-const footer = new TextEncoder().encode(
-  `\r\n`
-);
+    const finish = () => {
+      if (settled) return;
+      settled = true;
 
-const sendChunks = async (bytes) => {
-  for (
-    let offset = 0;
-    offset < bytes.length;
-    offset += PM290_CHUNK_BYTES
-  ) {
-    const chunk = bytes.subarray(
-      offset,
-      Math.min(offset + PM290_CHUNK_BYTES, bytes.length)
+      if (this.printCompleteWaiter === finish) {
+        this.printCompleteWaiter = null;
+      }
+
+      clearTimeout(timeout);
+      resolve();
+    };
+
+    const fail = () => {
+      if (settled) return;
+      settled = true;
+
+      if (this.printCompleteWaiter === finish) {
+        this.printCompleteWaiter = null;
+    }
+
+    clearTimeout(timeout);
+
+    reject(
+      new PrinterError(
+        "PM290 did not report that it was ready after printing"
+      )
+    );
+  };
+
+  const timeout = setTimeout(() => {
+    this.log(
+      "PM290 print completion notification timed out"
+    );
+    fail();
+  }, 10000);
+
+  this.printCompleteWaiter = finish;
+});
+
+    const header = new TextEncoder().encode(
+      `SIZE 54 mm,${heightMm} mm\r\n` +
+      `GAP 0,0\r\n` +
+      `DIRECTION 0,0\r\n` +
+      `DENSITY ${Math.max(0, Math.min(15, intensity))}\r\n` +
+      `CLS\r\n` +
+      `PRINT 1,1\r\n` +
+      `BITMAP 0,0,48,${lineCount},1,`
     );
 
-    await this.data.writeValueWithoutResponse(chunk);
-  }
-};
+    const footer = new TextEncoder().encode(`\r\n`);
+
+    const sendChunks = async (bytes) => {
+      for (
+        let offset = 0;
+        offset < bytes.length;
+        offset += PM290_CHUNK_BYTES
+      ) {
+        const chunk = bytes.subarray(
+          offset,
+          Math.min(offset + PM290_CHUNK_BYTES, bytes.length)
+        );
+
+        await this.data.writeValueWithoutResponse(chunk);
+      }
+    };
 
     await sendChunks(header);
 
@@ -614,15 +669,21 @@ const sendChunks = async (bytes) => {
       );
     }
 
-    await sendChunks(footer);
+await sendChunks(footer);
 
-    this.log(`PM290 print sent: ${lineCount} lines`);
+this.log(
+  `PM290 print data sent: ${lineCount} lines; waiting for printer completion`
+);
 
-    return {
-      ok: true,
-      expected: null,
-      reported: null,
-      sent: lineCount,
+await completionPromise;
+
+this.log(`PM290 print complete: ${lineCount} lines`);
+
+return {
+  ok: true,
+  expected: null,
+  reported: null,
+  sent: lineCount,
     };
   }
 }
