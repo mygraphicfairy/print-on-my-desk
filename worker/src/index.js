@@ -578,7 +578,12 @@ async function handleDone(request, env, ctx) {
       retry: body.retry === true,
       // And when something did go out, how far it got, so only the tickets
       // that were actually reached are given up on.
-      sentLines: Number.isInteger(body.sent) ? body.sent : null,
+      sentLines:
+        Number.isInteger(body.sent_lines)
+          ? body.sent_lines
+          : Number.isInteger(body.sent)
+            ? body.sent
+            : null,
       spans: Array.isArray(body.spans) ? body.spans : null,
     });
     console.log(
@@ -612,14 +617,21 @@ async function handleDone(request, env, ctx) {
     return json({ ok: true, updated: changed, retrying, rescued });
   }
 
-  const outcome = await completeJob(env.DB, {
-    id: body.id,
-    deviceId,
-    ok,
-    crc: typeof body.crc === "number" ? body.crc : null,
-    error: reason,
-  });
-  console.log(
+const outcome = await completeJob(env.DB, {
+  id: body.id,
+  deviceId,
+  ok,
+  crc: typeof body.crc === "number" ? body.crc : null,
+  error: reason,
+  sentLines:
+    Number.isInteger(body.sent_lines)
+      ? body.sent_lines
+      : Number.isInteger(body.sent)
+        ? body.sent
+        : null,
+});
+  
+console.log(
     JSON.stringify({
       event: "done",
       id: body.id,
