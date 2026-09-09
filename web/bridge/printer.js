@@ -568,6 +568,48 @@ if (
     // every job is exactly the 54 mm / 432-line capture.
     const heightMm = (lineCount / 8).toFixed(2);
 
+    const completionPromise = new Promise((resolve, reject) => {
+      let settled = false;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+
+      if (this.printCompleteWaiter === finish) {
+        this.printCompleteWaiter = null;
+      }
+
+      clearTimeout(timeout);
+      resolve();
+    };
+
+    const fail = () => {
+      if (settled) return;
+      settled = true;
+
+      if (this.printCompleteWaiter === finish) {
+        this.printCompleteWaiter = null;
+    }
+
+    clearTimeout(timeout);
+
+    reject(
+      new PrinterError(
+        "PM290 did not report that it was ready after printing"
+      )
+    );
+  };
+
+  const timeout = setTimeout(() => {
+    this.log(
+      "PM290 print completion notification timed out"
+    );
+    fail();
+  }, 10000);
+
+  this.printCompleteWaiter = finish;
+});
+
     const header = new TextEncoder().encode(
       `SIZE 54 mm,${heightMm} mm\r\n` +
       `GAP 0,0\r\n` +
@@ -626,48 +668,6 @@ if (
         bytesSent / PM290_WIDTH_BYTES
       );
     }
-    
-const completionPromise = new Promise((resolve, reject) => {
-  let settled = false;
-
-  const finish = () => {
-    if (settled) return;
-    settled = true;
-
-    if (this.printCompleteWaiter === finish) {
-      this.printCompleteWaiter = null;
-    }
-
-    clearTimeout(timeout);
-    resolve();
-  };
-
-  const fail = () => {
-    if (settled) return;
-    settled = true;
-
-    if (this.printCompleteWaiter === finish) {
-      this.printCompleteWaiter = null;
-    }
-
-    clearTimeout(timeout);
-
-    reject(
-      new PrinterError(
-        "PM290 did not report that it was ready after printing"
-      )
-    );
-  };
-
-  const timeout = setTimeout(() => {
-    this.log(
-      "PM290 print completion notification timed out"
-    );
-    fail();
-  }, 10000);
-
-  this.printCompleteWaiter = finish;
-});
 
 await sendChunks(footer);
 
