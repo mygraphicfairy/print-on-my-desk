@@ -485,17 +485,18 @@ export class PM290Printer {
       .join(" ")}`
   );
 
-  // Captured PM290 print-complete response:
-  // f0 00 0a b0
+// PM290 returns 63 00 when the printer is ready again
+// after completing a print job.
 if (
-  bytes.length >= 4 &&
-  bytes[0] === 0xf0 &&
+  bytes.length >= 2 &&
+  bytes[0] === 0x63 &&
   bytes[1] === 0x00
 ) {
-    if (this.printCompleteWaiter) {
-      const resolve = this.printCompleteWaiter;
-      this.printCompleteWaiter = null;
-      resolve();
+  if (this.printCompleteWaiter) {
+    const resolve = this.printCompleteWaiter;
+    this.printCompleteWaiter = null;
+    resolve();
+      }
     }
   }
 });
@@ -630,7 +631,7 @@ const sendChunks = async (bytes) => {
       );
     }
 
-const completionPromise = new Promise((resolve) => {
+const completionPromise = new Promise((resolve, reject) => {
   let settled = false;
 
   const finish = () => {
@@ -645,11 +646,28 @@ const completionPromise = new Promise((resolve) => {
     resolve();
   };
 
+  const fail = () => {
+    if (settled) return;
+    settled = true;
+
+    if (this.printCompleteWaiter === finish) {
+      this.printCompleteWaiter = null;
+    }
+
+    clearTimeout(timeout);
+
+    reject(
+      new PrinterError(
+        "PM290 did not report that it was ready after printing"
+      )
+    );
+  };
+
   const timeout = setTimeout(() => {
     this.log(
-      "PM290 print completion notification timed out; continuing"
+      "PM290 print completion notification timed out"
     );
-    finish();
+    fail();
   }, 10000);
 
   this.printCompleteWaiter = finish;
