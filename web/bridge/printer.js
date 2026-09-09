@@ -414,6 +414,7 @@ export class PM290Printer {
     this.data = null;
     this.notify = null;
     this.lastSentLines = 0;
+    this.printCompleteWaiter = null;
   }
 
   get connected() {
@@ -472,17 +473,34 @@ export class PM290Printer {
       );
       await this.notify.startNotifications();
       this.notify.addEventListener("characteristicvaluechanged", (event) => {
-        const bytes = new Uint8Array(
-          event.target.value.buffer,
-          event.target.value.byteOffset,
-          event.target.value.byteLength
-        );
-        this.log(
-          `PM290 notification: ${[...bytes]
-            .map((b) => b.toString(16).padStart(2, "0"))
-            .join(" ")}`
-        );
-      });
+  const bytes = new Uint8Array(
+    event.target.value.buffer,
+    event.target.value.byteOffset,
+    event.target.value.byteLength
+  );
+
+  this.log(
+    `PM290 notification: ${[...bytes]
+      .map((b) => b.toString(16).padStart(2, "0"))
+      .join(" ")}`
+  );
+
+  // Captured PM290 print-complete response:
+  // f0 00 0a b0
+  if (
+    bytes.length >= 4 &&
+    bytes[0] === 0xf0 &&
+    bytes[1] === 0x00 &&
+    bytes[2] === 0x0a &&
+    bytes[3] === 0xb0
+  ) {
+    if (this.printCompleteWaiter) {
+      const resolve = this.printCompleteWaiter;
+      this.printCompleteWaiter = null;
+      resolve();
+    }
+  }
+});
     } catch {
       // Some firmware revisions expose FF01 differently. Printing uses FF02
       // and does not depend on notifications.
@@ -614,15 +632,47 @@ const sendChunks = async (bytes) => {
       );
     }
 
-    await sendChunks(footer);
+await sendChunks(footer);
 
-    this.log(`PM290 print sent: ${lineCount} lines`);
+this.log(
+  `PM290 print data sent: ${lineCount} lines; waiting for printer completion`
+);
 
-    return {
-      ok: true,
-      expected: null,
-      reported: null,
-      sent: lineCount,
+// Wait for the PM290's captured print-complete notification.
+// Use a timeout so a firmware revision that does not report completion
+// cannot permanently stall the print queue.
+await new Promise((resolve) => {
+  let settled = false;
+
+  const finish = () => {
+    if (settled) return;
+    settled = true;
+
+    if (this.printCompleteWaiter === finish) {
+      this.printCompleteWaiter = null;
+    }
+
+    clearTimeout(timeout);
+    resolve();
+  };
+
+  const timeout = setTimeout(() => {
+    this.log(
+      "PM290 print completion notification timed out; continuing"
+    );
+    finish();
+  }, 10000);
+
+  this.printCompleteWaiter = finish;
+});
+
+this.log(`PM290 print complete: ${lineCount} lines`);
+
+return {
+  ok: true,
+  expected: null,
+  reported: null,
+  sent: lineCount,
     };
   }
 }
