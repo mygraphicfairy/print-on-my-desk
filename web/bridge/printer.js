@@ -487,13 +487,13 @@ export class PM290Printer {
 
   // Captured PM290 print-complete response:
   // f0 00 0a b0
-  if (
-    bytes.length >= 4 &&
-    bytes[0] === 0xf0 &&
-    bytes[1] === 0x00 &&
-    bytes[2] === 0x0a &&
-    bytes[3] === 0xb0
-  ) {
+if (
+  bytes.length >= 4 &&
+  bytes[0] === 0xf0 &&
+  bytes[1] === 0x00 &&
+  bytes[2] === 0x20 &&
+  bytes[3] === 0xd2
+) {
     if (this.printCompleteWaiter) {
       const resolve = this.printCompleteWaiter;
       this.printCompleteWaiter = null;
