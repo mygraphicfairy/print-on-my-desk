@@ -404,7 +404,7 @@ export class Printer {
   }
 }
 
-// --- PM290 / TSPL printer ----------------------------------------------------
+// --- PM290 / TSPL printer ----------------------------------------------------/
 
 export class PM290Printer {
   constructor({ log = () => {} } = {}) {
