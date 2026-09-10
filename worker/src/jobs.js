@@ -419,11 +419,20 @@ export async function completeBatch(
   // counter that a hot afternoon can exhaust.
   const status = ok ? "'printed'" : retry ? "'approved'" : "'failed'";
   const attempts = retry && !ok ? "MAX(attempts - 1, 0)" : "attempts";
-  const changed = await settle(
-    db, ids, deviceId, status, attempts, ok ? now : null, crc, error
-  );
-  return { changed, retrying: !ok && retry, rescued: [] };
+  if (ok && ids.length === 1 && Number.isInteger(sentLines)) {
+    await db
+      .prepare(
+        `UPDATE jobs
+            SET lines = ?
+          WHERE id = ? AND status = 'printing' AND claimed_by = ?`
+      )
+      .bind(sentLines, ids[0], deviceId)
+      .run();
 }
+
+const changed = await settle(
+  db, ids, deviceId, status, attempts, ok ? now : null, crc, error
+);
 
 /** One status write over a set of claimed jobs. */
 async function settle(db, ids, deviceId, status, attempts, printedAt, crc, error) {
