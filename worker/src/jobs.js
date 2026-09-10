@@ -430,9 +430,12 @@ export async function completeBatch(
       .run();
 }
 
-const changed = await settle(
-  db, ids, deviceId, status, attempts, ok ? now : null, crc, error
-);
+  const changed = await settle(
+    db, ids, deviceId, status, attempts, ok ? now : null, crc, error
+  );
+
+  return { changed, retrying: !ok && retry, rescued: [] };
+}
 
 /** One status write over a set of claimed jobs. */
 async function settle(db, ids, deviceId, status, attempts, printedAt, crc, error) {
