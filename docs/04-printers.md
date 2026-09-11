@@ -35,6 +35,18 @@ this code does not.
 * It runs on a battery. It will be flat one morning, and nothing will tell you
   in advance.
 
+  **One of those other boards is supported too: the PM290.** Same 384 dots, a
+different protocol (TSPL), worked out and tested by someone who owns one. Pick
+it in the bridge's printer menu before connecting.
+
+* **Works with:** the browser bridge only. The Pico firmware speaks MXW01.
+* **It reports nothing** the bridge knows how to read — no temperature, no
+  battery, no empty roll — so the bridge shows dashes, and it cannot hold
+  tickets back when the roll is out the way it does for the MXW01.
+* **In the Bluetooth chooser** it can appear twice for a few seconds. Wait for
+  the entry with a signal strength next to it; the other one gets you
+  "unsupported device".
+
 **One of those other boards is supported too: the PM290.** Same 384 dots, a
 different protocol (TSPL), worked out and tested by someone who owns one. Pick
 it in the bridge's printer menu before connecting.
