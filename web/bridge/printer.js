@@ -29,6 +29,19 @@ const CHAR_DATA = 0x0000ae03; // write without response
 
 const uuid = (n) => `0000${n.toString(16).padStart(4, "0")}-0000-1000-8000-00805f9b34fb`;
 
+// --- PM290 / TSPL BLE -------------------------------------------------------
+
+const PM290_GATT_SERVICE = 0x0000ff00;
+const PM290_CHAR_NOTIFY = 0x0000ff01;
+const PM290_CHAR_DATA = 0x0000ff02;
+
+// The PacketLogger capture showed the printer accepting 512-byte
+// application payloads on FF02. The BLE controller may fragment these
+// into smaller HCI packets, but Web Bluetooth should send 512-byte chunks.
+const PM290_CHUNK_BYTES = 512;
+
+export const PM290_WIDTH_BYTES = 48; // 384 dots
+
 // --- commands ---------------------------------------------------------------
 
 const CMD_STATUS = 0xa1;
@@ -388,5 +401,210 @@ export class Printer {
     const reported = done.length > 1 ? done[1] : null;
     if (feedLines > 0) await this.feed(feedLines);
     return { ok: reported === expected, expected, reported, sent };
+  }
+}
+
+
+// --- the PM290 --------------------------------------------------------------
+//
+// A contribution, worked out the same way as the MXW01 above: GATT inspection,
+// then PacketLogger captures of the vendor's iPhone app printing a real ticket,
+// then paper. Nothing here comes from a datasheet.
+//
+// It is a different animal. No command-and-answer protocol, no checksum, no
+// temperature, no paper sensor anybody knows how to read: the printer takes a
+// TSPL job - a few lines of text, then the raster - on FF02, and says "63 00"
+// on FF01 when it is ready again.
+
+// When "63 00" is late. Neither number is measured - the PM290 has not been
+// timed - so both are slow on purpose: 10 mm/s, well under what a small
+// thermal printer manages. They only bound a wait for an answer that normally
+// arrives long before, and the clock starts once the last byte is written, so
+// a long ticket's transfer time is not counted against its printing.
+const PM290_LINES_PER_S = 80;
+const PM290_GRACE_MS = 5_000;
+
+// The Worker's raster is 1 = black with the first dot in the LOW bit. TSPL
+// wants 0 = black with the first dot in the HIGH bit - found on paper, one
+// polarity and one bit order at a time. A table, because it is the same 256
+// answers for every byte of every ticket.
+const PM290_BYTE = Uint8Array.from({ length: 256 }, (_, b) => {
+  let r = 0;
+  for (let i = 0; i < 8; i++) if (b & (1 << i)) r |= 0x80 >> i;
+  return r ^ 0xff;
+});
+
+/**
+ * The admin page's `intensity` is on the MXW01's scale, 0x00-0xC0; TSPL's
+ * DENSITY is 0-15. Passed straight through, the default 0x5D clamped to 15 -
+ * the maximum - on every ticket. Scaled, the same setting means the same "how
+ * dark" on both machines: the default lands on 7, and 0xC0 still reaches 15.
+ * The vendor app sends 4.
+ */
+function pm290Density(intensity) {
+  const scaled = Math.round((Number(intensity) / MAX_INTENSITY) * 15);
+  return Number.isFinite(scaled) ? Math.max(0, Math.min(15, scaled)) : 4;
+}
+
+export class PM290Printer {
+  constructor({ log = () => {} } = {}) {
+    this.log = log;
+    this.device = null;
+    this.data = null;
+    this.notify = null;
+    this.lastSentLines = 0;
+    this.readyWaiter = null;
+  }
+
+  get connected() {
+    return Boolean(this.device?.gatt?.connected);
+  }
+
+  /**
+   * Opens the browser's device chooser. MUST be called from a click.
+   *
+   * By name, because the PM290 advertises af30 - the MXW01's number - while
+   * printing through ff00. The chooser can list it twice for a few seconds;
+   * the entry that works is the one that shows a signal strength.
+   */
+  async choose() {
+    if (!navigator.bluetooth) {
+      throw new PrinterError(
+        "This browser has no Web Bluetooth. Chrome or Edge on desktop, or Chrome on Android."
+      );
+    }
+    this.device = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: "PM290" }],
+      optionalServices: [uuid(PM290_GATT_SERVICE & 0xffff)],
+    });
+    this.device.addEventListener("gattserverdisconnected", () => {
+      this.log("disconnected");
+      this.data = null;
+      this.notify = null;
+    });
+    return this.device.name ?? "PM290";
+  }
+
+  async connect() {
+    if (!this.device) throw new PrinterError("no printer chosen yet");
+    if (this.connected && this.data) return;
+
+    const server = await this.device.gatt.connect();
+    const service = await server.getPrimaryService(uuid(PM290_GATT_SERVICE & 0xffff));
+    this.data = await service.getCharacteristic(uuid(PM290_CHAR_DATA & 0xffff));
+
+    // Optional, and print() knows it: without FF01 it waits out an estimate
+    // instead of listening for "63 00".
+    try {
+      this.notify = await service.getCharacteristic(uuid(PM290_CHAR_NOTIFY & 0xffff));
+      this.notify.addEventListener("characteristicvaluechanged", (event) => {
+        const v = event.target.value;
+        const bytes = new Uint8Array(v.buffer, v.byteOffset, v.byteLength);
+        if (bytes[0] === 0x63 && bytes[1] === 0x00 && this.readyWaiter) {
+          const ready = this.readyWaiter;
+          this.readyWaiter = null;
+          ready();
+        }
+      });
+      await this.notify.startNotifications();
+    } catch {
+      this.notify = null;
+      this.log("no ready signal from this PM290; timing tickets instead");
+    }
+    this.log("connected");
+  }
+
+  async disconnect() {
+    if (this.device?.gatt?.connected) this.device.gatt.disconnect();
+  }
+
+  /** What the bridge paints. The PM290 reports none of it, so it says so
+   *  rather than inventing a temperature. */
+  async status() {
+    return { state: 0, battery: null, temperature: null, paperOk: true, raw: null };
+  }
+
+  /** Stays connected, which is what keeps a Bluetooth printer from sleeping. */
+  async keepalive() {
+    if (!this.connected) await this.connect();
+    return await this.status();
+  }
+
+  /**
+   * Prints one raster, 48 bytes a line, and returns once the printer says it
+   * is ready for the next.
+   *
+   * The command order is the captured one, PRINT before BITMAP, and it is not
+   * a mistake: generic TSPL ordering is what the capture replaced. Do not
+   * "correct" it.
+   *
+   * `feedLines` is accepted and ignored: the job's own SIZE is the ticket, and
+   * nothing past it has been measured on this printer.
+   */
+  async print(lines, { intensity = 0x5d } = {}) {
+    if (!this.connected) await this.connect();
+    if (lines.length % PM290_WIDTH_BYTES !== 0) {
+      throw new PrinterError(`${lines.length} bytes is not a whole number of lines`);
+    }
+    const count = lines.length / PM290_WIDTH_BYTES;
+    if (!count) throw new PrinterError("nothing to print");
+    this.lastSentLines = 0;
+
+    // 8 dots/mm, and the real height rather than the 54 mm of the capture.
+    const header = new TextEncoder().encode(
+      `SIZE 54 mm,${(count / 8).toFixed(2)} mm\r\n` +
+        "GAP 0,0\r\n" +
+        "DIRECTION 0,0\r\n" +
+        `DENSITY ${pm290Density(intensity)}\r\n` +
+        "CLS\r\n" +
+        "PRINT 1,1\r\n" +
+        `BITMAP 0,0,${PM290_WIDTH_BYTES},${count},1,`
+    );
+    const raster = lines.map((b) => PM290_BYTE[b]);
+    const footer = new TextEncoder().encode("\r\n");
+
+    // Listening before sending, so an answer cannot slip past between the
+    // last write and the wait.
+    let ready = null;
+    const answered = this.notify
+      ? new Promise((resolve) => { this.readyWaiter = ready = resolve; })
+      : null;
+
+    try {
+      await this.write(header);
+      for (let at = 0; at < raster.length; at += PM290_CHUNK_BYTES) {
+        const chunk = raster.subarray(at, at + PM290_CHUNK_BYTES);
+        await this.data.writeValueWithoutResponse(chunk);
+        this.lastSentLines = Math.floor((at + chunk.length) / PM290_WIDTH_BYTES);
+      }
+      await this.write(footer);
+
+      const printing = PM290_GRACE_MS + (count / PM290_LINES_PER_S) * 1000;
+      if (!answered) {
+        // Every byte went out and there is no way to hear back, so this is as
+        // sure as it gets: wait long enough for the paper, then call it done.
+        await sleep(printing);
+        return { ok: true, expected: null, reported: null, sent: count };
+      }
+      let timer;
+      const late = new Promise((resolve) => { timer = setTimeout(resolve, printing, false); });
+      const heard = await Promise.race([answered.then(() => true), late]);
+      clearTimeout(timer);
+      if (!heard) {
+        // Every line is already counted as sent, so the bridge reports this as
+        // final and the Worker gives the ticket up rather than printing it
+        // twice.
+        throw new PrinterError("the printer never said it was ready again");
+      }
+      return { ok: true, expected: null, reported: null, sent: count };
+    } finally {
+      if (this.readyWaiter === ready) this.readyWaiter = null;
+    }
+  }
+
+  async write(bytes) {
+    for (let at = 0; at < bytes.length; at += PM290_CHUNK_BYTES) {
+      await this.data.writeValueWithoutResponse(bytes.subarray(at, at + PM290_CHUNK_BYTES));
+    }
   }
 }

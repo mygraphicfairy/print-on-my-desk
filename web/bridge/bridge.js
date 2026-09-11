@@ -25,17 +25,35 @@
 // fine on a shared one. There is a "forget" button, and using it is the whole
 // of the security model.
 
-import { Printer, NoPaper, TooHot, KEEPALIVE_MS, WIDTH_BYTES } from "./printer.js";
+import {
+  Printer,
+  PM290Printer,
+  NoPaper,
+  TooHot,
+  KEEPALIVE_MS,
+  WIDTH_BYTES,
+  PM290_WIDTH_BYTES,
+} from "./printer.js";
 
 const $ = (id) => document.getElementById(id);
 
 const TOKEN_KEY = "bridge.token";
 const DEVICE_KEY = "bridge.device";
+const PRINTER_KEY = "bridge.printer";
 
-// The profile to ask the Worker for. This bridge speaks to one machine - the
-// MXW01, 58 mm, 384 dots - so it says so, and the Worker renders to that width
-// and that rotation. See worker/src/profiles.js.
+// The profile to ask the Worker for, unless the page says otherwise. The
+// Worker renders to that profile's width and rotation - worker/src/profiles.js
+// - and the public page previews this one, so every printer offered below
+// must draw the same ticket for eyes. A test holds the two together.
 const PROFILE = "mxw01";
+
+// What each choice in the page's <select> talks to. The key is the Worker
+// profile, so a new printer is one line here, one <option>, one profile.
+const PRINTERS = {
+  mxw01: { make: (log) => new Printer({ log }), widthBytes: WIDTH_BYTES },
+  pm290: { make: (log) => new PM290Printer({ log }), widthBytes: PM290_WIDTH_BYTES },
+};
+let profile = PROFILE;
 
 // How long to let the Worker hold the connection open waiting for work. The
 // Pico cannot afford this - its whole cycle is ruled by a nine-minute deadline
@@ -51,7 +69,18 @@ const HEARTBEAT_MS = 60_000;
 const RETRY_MS = 5_000;
 const RETRY_MAX_MS = 60_000;
 
-const printer = new Printer({ log: (what) => say(what) });
+let printer = PRINTERS[profile].make((what) => say(what));
+
+/** Swaps the driver. A printer still connected under the old choice is let
+ *  go first, or it would stay held by a driver nobody talks to. */
+async function selectPrinter(id) {
+  if (!PRINTERS[id]) id = PROFILE;
+  if (id === profile) return;
+  await printer.disconnect();
+  profile = id;
+  printer = PRINTERS[id].make((what) => say(what));
+  localStorage.setItem(PRINTER_KEY, id);
+}
 
 let token = "";
 let deviceId = "";
@@ -78,7 +107,7 @@ async function api(path, options = {}) {
 async function nextJob() {
   const query = new URLSearchParams({
     device: deviceId,
-    profile: PROFILE,
+    profile,
     wait: String(LONG_POLL_S),
   });
   const response = await api(`/api/machine/next?${query}`);
@@ -102,7 +131,7 @@ async function heartbeat() {
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       device: deviceId,
-      profile: PROFILE,
+      profile,
       printer_state: printerState,
       firmware: "browser-bridge/1.0",
       last_error: lastError,
@@ -126,7 +155,8 @@ function decode(base64) {
 
 async function printJob(job) {
   const bytes = decode(job.data);
-  if (job.width_bytes !== WIDTH_BYTES) {
+  const { widthBytes } = PRINTERS[profile];
+  if (job.width_bytes !== widthBytes) {
     // The Worker rendered for another machine. Hand it back rather than print
     // nonsense: a ticket sent to the wrong width comes out as diagonal noise.
     await reportDone({
@@ -134,7 +164,7 @@ async function printJob(job) {
       ids: job.ids ?? [job.id],
       ok: false,
       retry: true,
-      error: `rendered ${job.width_bytes} bytes wide, this printer is ${WIDTH_BYTES}`,
+      error: `rendered ${job.width_bytes} bytes wide, this printer is ${widthBytes}`,
     });
     return;
   }
@@ -164,7 +194,10 @@ async function printJob(job) {
       // be asked for again.
       retry: false,
       error: result.ok ? null : lastError,
-      sent_lines: result.sent,
+      // `sent`, the name the Pico and the Pi use and the only one the Worker
+      // reads. This said `sent_lines` and the Worker never heard it, so a strip
+      // that died half way lost every ticket on it, not just the ones reached.
+      sent: result.sent,
       spans: job.spans ?? null,
     });
   } catch (err) {
@@ -182,7 +215,7 @@ async function printJob(job) {
       ok: false,
       retry: refusal || printer.lastSentLines === 0,
       error: err.message,
-      sent_lines: printer.lastSentLines,
+      sent: printer.lastSentLines,
       spans: job.spans ?? null,
     });
   }
@@ -253,8 +286,9 @@ function say(what, bad = false) {
 }
 
 function paint(status) {
-  $("temp").textContent = status ? `${status.temperature} C` : "-";
-  $("battery").textContent = status ? `${status.battery}` : "-";
+  // A printer that does not report a reading gets a dash, not "null C".
+  $("temp").textContent = status?.temperature != null ? `${status.temperature} C` : "-";
+  $("battery").textContent = status?.battery != null ? `${status.battery}` : "-";
   $("paper").textContent = status ? (status.paperOk ? "loaded" : "EMPTY") : "-";
   $("done").textContent = `${printedCount} printed, ${failedCount} failed`;
 }
@@ -263,12 +297,14 @@ function setRunning(on) {
   running = on;
   $("start").hidden = on;
   $("stop").hidden = !on;
+  $("printer").disabled = on;
   $("dot").className = on ? "dot dot--on" : "dot";
   $("status").textContent = on ? "running — leave this tab open" : "stopped";
 }
 
 $("connect").addEventListener("click", async () => {
   try {
+    await selectPrinter($("printer").value);
     const name = await printer.choose();
     await printer.connect();
     say(`connected to ${name}`);
@@ -316,6 +352,10 @@ window.addEventListener("beforeunload", (event) => {
   deviceId = localStorage.getItem(DEVICE_KEY) ?? `browser-${Math.random().toString(36).slice(2, 8)}`;
   localStorage.setItem(DEVICE_KEY, deviceId);
   $("device").textContent = deviceId;
+  // The choice is remembered like the device id, and read at connect time:
+  // until then no driver has touched Bluetooth, so nothing needs undoing.
+  const remembered = localStorage.getItem(PRINTER_KEY);
+  $("printer").value = PRINTERS[remembered] ? remembered : PROFILE;
   $("start").disabled = true;
   setRunning(false);
   if (!navigator.bluetooth) {

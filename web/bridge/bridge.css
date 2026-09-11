@@ -18,9 +18,10 @@
            font-size: 13px; letter-spacing: 0.06em; cursor: pointer; }
   button.ghost { background: none; color: var(--ink); }
   button:disabled { opacity: 0.4; cursor: default; }
-  input[type="password"] { width: 100%; padding: 0.6rem; font: inherit;
+  input[type="password"], select { width: 100%; padding: 0.6rem; font: inherit;
            background: transparent; color: var(--ink); border: 1px solid var(--ink);
            margin-bottom: 0.6rem; }
+  select option { background: var(--paper); color: var(--ink); }
   .facts { display: grid; grid-template-columns: auto 1fr; gap: 0.3rem 1rem;
            font-size: 13px; margin: 0; }
   .facts dt { color: var(--mute); }
