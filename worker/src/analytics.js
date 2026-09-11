@@ -18,6 +18,11 @@
 // on: without them every visit geolocates to the Worker and reads as one
 // person. The address is forwarded, never stored; this Worker keeps only
 // salted hashes of its own (see hashIp in index.js).
+//
+// the owner's instance is self-hosted on Vercel, which overwrites x-forwarded-for
+// with the caller's address - this Worker's. The visitor's address therefore
+// also travels in x-visitor-ip, the header the instance is configured to
+// trust (CLIENT_IP_HEADER). Umami Cloud ignores it, so it costs nothing there.
 
 const SCRIPT = "https://cloud.umami.is/script.js";
 const GATEWAY = "https://gateway.umami.is/api/send";
@@ -96,6 +101,7 @@ export async function proxySend(request, sameOrigin) {
         "user-agent": request.headers.get("user-agent") ?? "",
         "x-forwarded-for": ip,
         "x-real-ip": ip,
+        "x-visitor-ip": ip,
       },
       body,
     });

@@ -267,6 +267,46 @@ test("a roll length of zero turns the estimate off rather than guessing", async 
   assert.equal(paper.leftMm, null);
 });
 
+test("a ticket handed out on its own still reaches the paper gauge", async () => {
+  // Through the real handler, because that is where the line was missing:
+  // the batch path recorded each ticket's height and the single-ticket path
+  // did not, so a device that never asks for a batch - the browser bridge -
+  // printed roll after roll on a gauge that never moved.
+  const { default: worker } = await import("../src/index.js");
+  const db = makeDb();
+  db.seed([{ id: 1, text: "a message long enough\nto take a few lines" }]);
+  const env = { DB: db, PRINTER_TOKEN: "t" };
+  const ctx = { waitUntil() {}, passThroughOnException() {} };
+  const call = (path, init = {}) =>
+    worker.fetch(
+      new Request(`https://example.test${path}`, {
+        ...init,
+        headers: { authorization: "Bearer t", "content-type": "application/json" },
+      }),
+      env,
+      ctx
+    );
+
+  const next = await call("/api/machine/next?device=bridge&profile=mxw01");
+  assert.equal(next.status, 200);
+  const job = await next.json();
+  assert.equal(job.id, 1);
+  assert.ok(job.lines > 0);
+
+  // Reported the way the bridge reports: always as a list of ids.
+  const done = await call("/api/machine/done", {
+    method: "POST",
+    body: JSON.stringify({ device: "bridge", ids: [1], ok: true, crc: job.crc, sent: job.lines }),
+  });
+  assert.equal(done.status, 200);
+
+  const paper = await paperUsed(db, { roll_changed_at: "0", roll_length_m: "10" });
+  assert.equal(paper.tickets, 1);
+  // The rendered height at 8 dots/mm, plus the MXW01's eject margin.
+  assert.equal(paper.usedMm, Math.round(job.lines / 8 + 30),
+    "the ticket printed and the gauge did not count its height");
+});
+
 // --- events -----------------------------------------------------------------
 
 test("events are recorded, read back newest first, and bounded", async () => {

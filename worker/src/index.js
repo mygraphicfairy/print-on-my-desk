@@ -416,6 +416,18 @@ async function handleNext(request, env, url) {
   // see the new figure, or a budget of one hands out two.
   if (budget > 0) await spendBudget(env.DB, 1);
 
+  // The paper gauge, which the batch path feeds through rememberHeights and
+  // this one never did: every ticket that came out one at a time counted as
+  // no paper at all. The Pi asks for batches, so it went unseen here - but the
+  // browser bridge never does, so on the public edition it was every ticket,
+  // and the gauge sat still while the roll emptied. Found on 11 September by
+  // the person who added the PM290. One write per ticket, which is what the
+  // batch path already pays.
+  await env.DB
+    .prepare("UPDATE jobs SET lines = ? WHERE id = ?")
+    .bind(payload.lines, job.id)
+    .run();
+
   console.log(
     JSON.stringify({ event: "claimed", id: job.id, device: deviceId, lines: payload.lines })
   );
