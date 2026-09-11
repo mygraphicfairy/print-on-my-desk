@@ -61,6 +61,28 @@ test("the page previews the printer the bridge asks the Worker for", () => {
     `the page previews ${PROFILE.id} and the bridge prints ${declared[1]}`);
 });
 
+test("every printer the bridge offers draws the ticket the page previews", () => {
+  // The bridge offers more than one machine and the page previews one. That
+  // is honest exactly as long as each of them draws the same ticket for eyes,
+  // so it is the drawings that are compared, not the profiles' fields: a
+  // field nobody thought to list would slip past a list.
+  const offered = [...read("web/bridge/index.html").matchAll(/<option value="([a-z0-9]+)"/g)]
+    .map((m) => m[1]);
+  assert.ok(offered.length > 1, "web/bridge/index.html no longer offers a choice");
+  const bridge = read("web/bridge/bridge.js");
+  const text = "Bonjour\nfrom a desk far away";
+  const shown = renderForScreen(text, { ...TICKET, profile: PROFILE });
+  for (const id of offered) {
+    assert.ok(PROFILES[id], `the bridge offers ${id} and the Worker has no such profile`);
+    assert.match(bridge, new RegExp(`^  ${id}: \\{ make:`, "m"),
+      `the page offers ${id} and bridge.js has no driver for it`);
+    const drawn = renderForScreen(text, { ...TICKET, profile: PROFILES[id] });
+    assert.equal(drawn.height, shown.height, `${id} draws a ticket of another height`);
+    assert.equal(drawn.crc8(), shown.crc8(),
+      `${id} draws a different ticket from the ${PROFILE.id} the page previews`);
+  }
+});
+
 test("nothing draws a ticket for a person except through ticket.js", () => {
   // A source check, and it earns its place: the failure it guards is a file
   // that renders correctly in isolation and is simply never asked the

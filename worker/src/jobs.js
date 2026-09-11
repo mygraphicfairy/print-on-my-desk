@@ -419,21 +419,9 @@ export async function completeBatch(
   // counter that a hot afternoon can exhaust.
   const status = ok ? "'printed'" : retry ? "'approved'" : "'failed'";
   const attempts = retry && !ok ? "MAX(attempts - 1, 0)" : "attempts";
-  if (ok && ids.length === 1 && Number.isInteger(sentLines)) {
-    await db
-      .prepare(
-        `UPDATE jobs
-            SET lines = ?
-          WHERE id = ? AND status = 'printing' AND claimed_by = ?`
-      )
-      .bind(sentLines, ids[0], deviceId)
-      .run();
-}
-
   const changed = await settle(
     db, ids, deviceId, status, attempts, ok ? now : null, crc, error
   );
-
   return { changed, retrying: !ok && retry, rescued: [] };
 }
 
@@ -491,38 +479,24 @@ async function requeue(db, ids, deviceId) {
  *
  * @returns {Promise<{changed: boolean, retrying: boolean, attempts: number}>}
  */
-export async function completeJob(
-  db,
-  { id, deviceId, ok, crc, error, sentLines = null },
-  now = Date.now()
-) {
+export async function completeJob(db, { id, deviceId, ok, crc, error }, now = Date.now()) {
   const row = await db
     .prepare(
       `UPDATE jobs
           SET status = CASE
-              WHEN ?1 THEN 'printed'
-              WHEN attempts < ?2 THEN 'approved'
-              ELSE 'failed'
-          END,
-          printed_at = CASE WHEN ?1 THEN ?3 ELSE NULL END,
-          lines = CASE WHEN ?1 AND ?6 IS NOT NULL THEN ?6 ELSE lines END,
-          claimed_at = NULL,
-          claimed_by = NULL,
-          crc = ?4,
-          error = ?5
-        WHERE id = ?7 AND status = 'printing' AND claimed_by = ?8
-        RETURNING status, attempts`
+                WHEN ?1 THEN 'printed'
+                WHEN attempts < ?2 THEN 'approved'
+                ELSE 'failed'
+              END,
+              printed_at = CASE WHEN ?1 THEN ?3 ELSE NULL END,
+              claimed_at = NULL,
+              claimed_by = NULL,
+              crc = ?4,
+              error = ?5
+        WHERE id = ?6 AND status = 'printing' AND claimed_by = ?7
+       RETURNING status, attempts`
     )
-    .bind(
-      ok ? 1 : 0,
-      MAX_PRINT_ATTEMPTS,
-      now,
-      crc ?? null,
-      error ?? null,
-      sentLines,
-      id,
-      deviceId
-    )
+    .bind(ok ? 1 : 0, MAX_PRINT_ATTEMPTS, now, crc ?? null, error ?? null, id, deviceId)
     .first();
 
   // The statement chose between three outcomes, so the counters are told what
