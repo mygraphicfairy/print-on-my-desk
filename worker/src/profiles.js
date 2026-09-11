@@ -148,25 +148,31 @@ const TRP100 = {
 };
 
 /**
- * 8 dots/mm, 384 dots, 54 mm PM290 pocket BLE printer.
+ * A pocket Bluetooth printer, 384 dots at 8 dots/mm - a contribution, printed
+ * on a real one. Same head width as the MXW01, a different protocol: TSPL on
+ * GATT ff00 rather than the MXW01's ae30 commands. web/bridge/printer.js.
  *
- * The PM290 uses TSPL-style raster data over BLE rather than the
- * MXW01's custom AE30 protocol.
+ * The ticket's geometry is the MXW01's on purpose, margins included. The
+ * public page previews one profile for every printer the bridge offers, and
+ * that is only honest while they all draw the same ticket; a test says so.
  */
-// PM290 support: 384-dot TSPL/BLE printer
 const PM290 = {
   id: "pm290",
   label: "PM290 (54 mm, BLE)",
   widthPixels: 384,
   widthBytes: 48,
   dotsPerMm: 8,
+  // The SIZE of the vendor app's own job, in the capture.
   paperWidthMm: 54,
   layout: "framed",
   margin: 12,
   topPad: 8,
   bottomPad: 12,
   maxLines: 1024,
+  // Nothing past the ticket. The job's SIZE is the ticket's own height, and
+  // the tickets it printed came out whole, so no feed has been asked for.
   feedLines: 0,
+  // Tried both ways on paper: turned over, it printed upside down.
   flip180: false,
   transport: "tspl-ble",
 };

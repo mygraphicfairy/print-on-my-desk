@@ -17,30 +17,22 @@
     messages come out. When you close it, they wait.
   </p>
 
-<div class="panel">
-
-<h2>1 · The printer</h2>
-
-<label for="printerType">Printer</label>
-
-<select id="printerType">
-<option value="mxw01">MXW01</option>
-<option value="pm290">PM290</option>
-</select>
-
-<div class="buttons">
-
-<button id="connect">Connect over Bluetooth</button>
-
-</div>
-
-<p class="lead" style="margin:0.75rem 0 0;font-size:13px">
-
-Turn the selected printer on first. Your browser will ask which device to use.
-
-</p>
-
-</div>
+  <div class="panel">
+    <h2>1 · The printer</h2>
+    <label class="sr" for="printer">Which printer</label>
+    <select id="printer">
+      <option value="mxw01">MXW01</option>
+      <option value="pm290">PM290</option>
+    </select>
+    <div class="buttons">
+      <button id="connect">Connect over Bluetooth</button>
+    </div>
+    <p class="lead" style="margin:0.75rem 0 0;font-size:13px">
+      Turn the printer on first. Your browser will ask which device to use —
+      the one whose name you picked above. A PM290 can show up twice for a few
+      seconds; wait for the entry with a signal strength next to it.
+    </p>
+  </div>
 
   <div class="panel">
     <h2>2 · The queue</h2>
