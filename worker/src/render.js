@@ -49,7 +49,7 @@ export const LAYOUT = {
   ruleGap: 6,
   // Air above and below the rule that separates two tickets of one batch.
   batchGap: 8,
-  title: "PRINT ON MY DESK",
+  title: "FAIRY MAIL",
 };
 
 /**
